@@ -1,0 +1,7 @@
+To download the dataset goto:
+
+https://drive.google.com/a/seecs.edu.pk/uc?export=download&id=0BwmD_VLjROrfTHk4NFg2SndKcjQ
+
+After downloading it, extract it in a folder
+Now download the given load.py file and place it in same folder where files are located.
+Run the load.py file and it will give u the cnn dataset in excel file.
