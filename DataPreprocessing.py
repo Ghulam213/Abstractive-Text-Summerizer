@@ -100,6 +100,7 @@ class DataPreprocessing():
 
     def start_end_token(self, data):
         data = data.apply(lambda x: 'sostok ' + x + ' eostok')
+        return data
 
     def split_data(self, X, y, train_ratio, dev_ratio, random=0, do_shuffle=True):
         X_tr, X_test, y_tr, y_test = train_test_split(np.array(X), np.array(y), test_size=(1 - train_ratio),
