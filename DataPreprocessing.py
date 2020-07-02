@@ -8,108 +8,87 @@ try:
     from keras.preprocessing.sequence import pad_sequences
     import nltk
     import pickle
+    from TextCleaner import TextCleaner
 except ImportError as e:
     print(e)
 
 
 class DataPreprocessing():
     def __init__(self):
-        self.max_stories_len = 700
-        self.max_highlights_len = 38
-        self.reverse_target_word_index = ''
-        self.reverse_source_word_index = ''
-        # self.target_word_index = ''      if end start tokens are added uncomment it.
-
-    def load_dataset(self, filename, path=''):
-        try:
-            return pd.read_excel(path + filename + '.xlsx')
-        except FileNotFoundError as e:
-            print(e)
-
-    def clean_stories(self, lines):
-        stop_words = set(stopwords.words('english'))
-        cleaned = list()
-        # prepare a translation table to remove punctuation
-        table = str.maketrans('', '', string.punctuation)
-        for line in lines:
-            # strip source cnn office if it exists
-            index = line.find('(CNN) -- ')
-            if index > -1:
-                line = line[index + len('(CNN)'):]
-            # tokenize on white space
-            line = line.split()
-            # convert to lower case
-            line = [word.lower() for word in line]
-            # remove punctuation from each token
-            line = [w.translate(table) for w in line]
-            # remove tokens with numbers in them
-            line = [word for word in line if word.isalpha()]
-            line = [w for w in line if w not in stop_words]
-            # store as string
-            cleaned.append(' '.join(line))
-        # remove empty strings
-        cleaned = [c for c in cleaned if len(c) > 0]
-        cleaned = ' '.join(c for c in cleaned)
-        return cleaned
-
-    def clean_highlights(self, line):
-        stop_words = set(stopwords.words('english'))
-        cleaned = list()
-        # prepare a translation table to remove punctuation
-        table = str.maketrans('', '', string.punctuation)
-        # strip source cnn office if it exists
-        index = line.find('NEW: ')
-        if index > -1:
-            line = line[index + len('NEW:'):]
-        # tokenize on white space
-        line = line.split()
-        # convert to lower case
-        line = [word.lower() for word in line]
-        # remove punctuation from each token
-        line = [w.translate(table) for w in line]
-        # remove tokens with numbers in them
-        line = [word for word in line if word.isalpha()]
-        line = [w for w in line if w not in stop_words]
-        # store as string
-        cleaned.append(' '.join(line))
-        # remove empty strings
-        cleaned = [c for c in cleaned if len(c) > 0]
-        return cleaned[0]
-
-    def drop_dulp_and_na(self, df, columns, do_inplace=True):
-        for subset in columns:
-            df.drop_duplicates(subset=[subset], inplace=do_inplace)  # dropping duplicates
-        df.replace('', np.nan, inplace=True)
-        df.dropna(axis=0, inplace=do_inplace)
-        return df
-
-    def clear_long_text(self, df):
-        stories = np.array(df['Stories'])
-        highlights = np.array(df['Highlights'])
-
-        short_text = []
-        short_summary = []
-
-        for i in range(len(highlights)):
-            if len(highlights[i].split()) <= self.max_highlights_len and len(
-                    stories[i].split()) <= self.max_stories_len:
-                short_text.append(stories[i])
-                short_summary.append(highlights[i])
-
-        return pd.DataFrame({'Stories': short_text, 'Highlights': short_summary})
-
-    def start_end_token(self, data):
-        data = data.apply(lambda x: 'sostok ' + x + ' eostok')
+        self.max_length_text = 80
+        self.max_length_summary = 10
+    
+    def load_dataset(self,filename,nrows):
+        data = pd.read_csv(filename + '.csv',nrows = nrows)
+        
+        return data
+    
+    def remove_columns(self,data):
+        data = data.drop(['Id','ProductId','UserId','ProfileName', 'HelpfulnessNumerator','HelpfulnessDenominator', 'Score', 'Time'],1)
+        
         return data
 
-    def split_data(self, X, y, train_ratio, dev_ratio, random=0, do_shuffle=True):
-        X_tr, X_test, y_tr, y_test = train_test_split(np.array(X), np.array(y), test_size=(1 - train_ratio),
-                                                      random_state=random, shuffle=do_shuffle)
-        dev_len = int(dev_ratio * len(X))
-        X_dev, X_test, y_dev, y_test = X_test[:dev_len], X_test[dev_len:], y_test[:dev_len], y_test[dev_len:]
+    
+    def clean_data(self,data):
+        cleaner = TextCleaner()
+        cleaned_text = []
+        for t in data['Text']:
+            cleaned_text.append(cleaner.text_preprocessing(str(t)))
 
-        return X_tr, X_test, X_dev, y_tr, y_test, y_dev
+        cleaned_summaries = []
+        for s in data['Summary']:
+            cleaned_summaries.append(cleaner.text_preprocessing(str(s), stop_words=False))
+        
+        data['Text'] = pd.Series(cleaned_text)
+        data['Summary'] = pd.Series(cleaned_summaries)
+        
+        return data['Text'], data['Summary']
+    
+    def data_distribution(self,data):
+        # Understanding distribution
+        text_word_count = []
+        for story in data['Text']:
+            text_word_count.append(len(story.split()))
 
+        summary_word_count = []
+        for highlight in data['Summary']:
+            summary_word_count.append(len(highlight.split()))
+            
+        return text_word_count, summary_word_count
+    
+    def max_length_graph(self,text_word_count, summary_word_count):
+        length_df = pd.DataFrame({'text':text_word_count, 'summary':summary_word_count})
+        length_df.hist(bins = 30)
+        plt.show()
+        
+    def remove_long_sequences(self, data):
+        text = np.array(data['Text'])
+        summaries = np.array(data['Summary'])
+
+        short_text = []
+        short_summaries = []
+
+        for i in range(len(summaries)):
+            if (len(summaries[i].split()) <= self.max_length_summary) and (len(text[i].split()) <= self.max_length_text):
+                short_text.append(text[i])
+                short_summaries.append(summaries[i])
+    
+        data['Text'] = pd.Series(short_text)
+        data['Summary'] = pd.Series(short_summaries)
+    
+        return data['Text'], data['Summary']
+    
+    def drop_dulp_and_na(self, data, columns, do_inplace=True):
+        for subset in columns:
+            data.drop_duplicates(subset=[subset], inplace=do_inplace)  # dropping duplicates
+        data.replace('', np.nan, inplace=True)
+        data.dropna(axis=0, inplace=do_inplace)
+        
+        return data
+    
+    def start_end_token(self, column):
+        return column.apply(lambda x : 'sostok ' + str(x) + ' eostok') 
+    
     def rare_words_count(self, data, thresh=5):
         data_tokenizer = Tokenizer()
         data_tokenizer.fit_on_texts(list(data))
@@ -126,67 +105,46 @@ class DataPreprocessing():
                 cnt = cnt + 1
                 freq = freq + value
 
-        # print("% of rare words in vocabulary:",(cnt/tot_cnt)*100)
-        # print("Total Coverage of rare words:",(freq/tot_freq)*100)
         return tot_cnt, cnt
-
-    def text2seq(self, data, tr_data, tot_cnt, cnt, data_type='p'):
+    
+    def text2seq(self, data, tot_cnt, cnt):
         # prepare a tokenizer for reviews on training data
         data_tokenizer = Tokenizer(num_words=tot_cnt - cnt)
-        data_tokenizer.fit_on_texts(list(tr_data))
+        data_tokenizer.fit_on_texts(list(data))
 
         # convert text sequences into integer sequences
         data_seq = data_tokenizer.texts_to_sequences(data)
-        if data_type == 'x':
-            self.reverse_source_word_index = data_tokenizer.index_word
-        if data_type == 'y':
-            self.reverse_target_word_index = data_tokenizer.index_word
-            # self.target_word_index = data_tokenizer.word_index      if end start tokens are added uncomment it.
 
-        return data_seq
 
-    def pad_seq(self, data, maxlenght, padding='post'):
-        return pad_sequences(data, maxlen=maxlenght, padding=padding)
+        return data_seq, data_tokenizer
+    
+    def pad_seq(self, data, maxlength, padding='post'):
+        return pad_sequences(data, maxlen=maxlength, padding=padding)
+    
+    def required_dicts(self, x_tokenizer, y_tokenizer):
+        # Vocabulary
+        x_vocab_size = len(x_tokenizer.word_index) + 1
+        y_vocab_size = len(y_tokenizer.word_index) + 1
+        
+        # Word to index
+        input_word_index = x_tokenizer.word_index
+        target_word_index = y_tokenizer.word_index
+        
+        # Index to word
+        reversed_input_word_index = x_tokenizer.index_word
+        reversed_target_word_index = y_tokenizer.index_word
 
-    # def seq2summary(self,input_seq):      if end start tokens are added uncomment it.
-    #     newString = ''
-    #     for i in input_seq:
-    #         if ((i != 0 and i != self.target_word_index['sostok']) and i != self.target_word_index['eostok']):
-    #             newString = newString + reverse_target_word_index[i] + ' '
-    #     return newString
+        return x_vocab_size, y_vocab_size, input_word_index, target_word_index, reversed_input_word_index, reversed_target_word_index
+    
+    
+    def split_data(self, X, y, train_ratio, dev_ratio, random=0, do_shuffle=True):
+        X_tr, X_test, y_tr, y_test = train_test_split(np.array(X), np.array(y), test_size=(1 - train_ratio),
+                                                      random_state=random, shuffle=do_shuffle)
+        dev_len = int(dev_ratio * len(X))
+        X_dev, X_test, y_dev, y_test = X_test[:dev_len], X_test[dev_len:], y_test[:dev_len], y_test[dev_len:]
 
-    def seq2summary(self, input_seq):
-        try:
-            newString = ''
-            for i in input_seq:
-                if i != 0:
-                    newString = newString + self.reverse_target_word_index[i] + ' '
-            return newString
-        except IndexError:
-            loaded_data = self.load_pickle('tokenizerData')
-            self.reverse_target_word_index, self.reverse_source_word_index = loaded_data[0], loaded_data[1]
-            newString = ''
-            for i in input_seq:
-                if i != 0:
-                    newString = newString + self.reverse_target_word_index[i] + ' '
-            return newString
-
-    def seq2text(self, input_seq):
-        try:
-            newString = ''
-            for i in input_seq:
-                if i != 0:
-                    newString = newString + self.reverse_source_word_index[i] + ' '
-            return newString
-        except IndexError:
-            loaded_data = self.load_pickle('tokenizerData')
-            self.reverse_target_word_index, self.reverse_source_word_index = loaded_data[0], loaded_data[1]
-            newString = ''
-            for i in input_seq:
-                if i != 0:
-                    newString = newString + self.reverse_source_word_index[i] + ' '
-            return newString
-
+        return X_tr, X_test, X_dev, y_tr, y_test, y_dev
+    
     def pickle_data(self, data, filename, path=''):
         pickle_out = open(path + filename + '.pickle', "wb")
         pickle.dump(data, pickle_out)
@@ -195,3 +153,4 @@ class DataPreprocessing():
     def load_pickle(self, filename, path=''):
         pickle_in = open(path + filename + '.pickle', "rb")
         return pickle.load(pickle_in)
+
